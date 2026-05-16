@@ -1,0 +1,40 @@
+name: Trust Boundary Reusable Caller
+
+on:
+  workflow_dispatch:
+    inputs:
+      scenario:
+        required: true
+        default: reusable_permissions_baseline
+      caller_permissions_mode:
+        required: true
+        type: choice
+        options:
+          - read
+          - write
+        default: read
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  call_read:
+    if: ${{ inputs.caller_permissions_mode == 'read' }}
+    permissions:
+      contents: read
+      actions: read
+    uses: naufalfx805-source/oidc-callee-lab/.github/workflows/trust-privileged-reusable.yml@main
+    with:
+      scenario: ${{ inputs.scenario }}
+      requested_mode: read
+
+  call_write:
+    if: ${{ inputs.caller_permissions_mode == 'write' }}
+    permissions:
+      contents: write
+      actions: read
+    uses: naufalfx805-source/oidc-callee-lab/.github/workflows/trust-privileged-reusable.yml@main
+    with:
+      scenario: ${{ inputs.scenario }}
+      requested_mode: write
