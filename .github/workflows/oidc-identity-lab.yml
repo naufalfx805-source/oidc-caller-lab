@@ -1,6 +1,9 @@
 name: OIDC Identity Lab Caller
 
 on:
+  push:
+    branches:
+      - main
   workflow_dispatch:
     inputs:
       scenario:
@@ -24,8 +27,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Capture caller direct claims
         env:
-          SCENARIO: ${{ inputs.scenario }}
-          AUDIENCE: ${{ inputs.audience }}
+          SCENARIO: ${{ inputs.scenario || 'baseline_mutable' }}
+          AUDIENCE: ${{ inputs.audience || 'oidc-identity-lab' }}
         run: |
           set -euo pipefail
           mkdir -p oidc-claims
@@ -44,5 +47,5 @@ jobs:
       id-token: write
       contents: read
     with:
-      scenario: ${{ inputs.scenario }}
-      audience: ${{ inputs.audience }}
+      scenario: ${{ inputs.scenario || 'baseline_mutable' }}
+      audience: ${{ inputs.audience || 'oidc-identity-lab' }}
