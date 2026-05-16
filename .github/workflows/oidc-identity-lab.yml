@@ -27,7 +27,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Capture caller direct claims
         env:
-          SCENARIO: ${{ inputs.scenario || 'baseline_mutable' }}
+          SCENARIO: ${{ inputs.scenario || 'reusable_rerun_mutable' }}
           AUDIENCE: ${{ inputs.audience || 'oidc-identity-lab' }}
         run: |
           set -euo pipefail
@@ -47,5 +47,5 @@ jobs:
       id-token: write
       contents: read
     with:
-      scenario: ${{ inputs.scenario || 'baseline_mutable' }}
+      scenario: ${{ inputs.scenario || 'reusable_rerun_mutable' }}
       audience: ${{ inputs.audience || 'oidc-identity-lab' }}
