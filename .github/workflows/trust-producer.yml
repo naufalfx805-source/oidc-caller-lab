@@ -1,0 +1,101 @@
+name: Trust Boundary Producer
+
+on:
+  workflow_dispatch:
+    inputs:
+      scenario:
+        required: true
+        default: artifact_baseline
+      cache_key:
+        required: true
+        default: trust-boundary-cache-shared
+      artifact_name:
+        required: true
+        default: trust-boundary-payload
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  produce:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build deterministic artifact payload
+        env:
+          SCENARIO: ${{ inputs.scenario || 'artifact_push' }}
+          CACHE_KEY: ${{ inputs.cache_key || 'trust-boundary-cache-shared' }}
+          ARTIFACT_NAME: ${{ inputs.artifact_name || 'trust-boundary-payload' }}
+        run: |
+          set -euo pipefail
+          mkdir -p trust-artifact trust-cache evidence
+          cat > trust-artifact/payload.txt <<EOF
+          scenario=${SCENARIO}
+          cache_key=${CACHE_KEY}
+          artifact_name=${ARTIFACT_NAME}
+          repository=${GITHUB_REPOSITORY}
+          repository_id=${GITHUB_REPOSITORY_ID}
+          actor=${GITHUB_ACTOR}
+          actor_id=${GITHUB_ACTOR_ID}
+          ref=${GITHUB_REF}
+          ref_name=${GITHUB_REF_NAME}
+          sha=${GITHUB_SHA}
+          workflow=${GITHUB_WORKFLOW}
+          workflow_ref=${GITHUB_WORKFLOW_REF}
+          run_id=${GITHUB_RUN_ID}
+          run_attempt=${GITHUB_RUN_ATTEMPT}
+          event_name=${GITHUB_EVENT_NAME}
+          EOF
+          sha256sum trust-artifact/payload.txt | tee trust-artifact/payload.sha256
+          python3 - <<'PY'
+          import json, os, pathlib, hashlib
+          payload = pathlib.Path("trust-artifact/payload.txt")
+          manifest = {
+              "scenario": os.environ["SCENARIO"],
+              "cache_key": os.environ["CACHE_KEY"],
+              "artifact_name": os.environ["ARTIFACT_NAME"],
+              "repository": os.environ["GITHUB_REPOSITORY"],
+              "repository_id": os.environ["GITHUB_REPOSITORY_ID"],
+              "actor": os.environ["GITHUB_ACTOR"],
+              "actor_id": os.environ["GITHUB_ACTOR_ID"],
+              "ref": os.environ["GITHUB_REF"],
+              "ref_name": os.environ["GITHUB_REF_NAME"],
+              "sha": os.environ["GITHUB_SHA"],
+              "workflow": os.environ["GITHUB_WORKFLOW"],
+              "workflow_ref": os.environ["GITHUB_WORKFLOW_REF"],
+              "run_id": os.environ["GITHUB_RUN_ID"],
+              "run_attempt": os.environ["GITHUB_RUN_ATTEMPT"],
+              "event_name": os.environ["GITHUB_EVENT_NAME"],
+              "payload_sha256": hashlib.sha256(payload.read_bytes()).hexdigest(),
+          }
+          pathlib.Path("trust-artifact/manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
+          pathlib.Path("trust-cache/cache-payload.txt").write_text(payload.read_text(encoding="utf-8"), encoding="utf-8")
+          PY
+
+      - uses: actions/cache/save@v4
+        id: cache_save
+        with:
+          path: trust-cache
+          key: ${{ inputs.cache_key || 'trust-boundary-cache-shared' }}
+
+      - name: Record cache save result
+        run: |
+          set -euo pipefail
+          cat > trust-artifact/cache-save.json <<EOF
+          {
+            "cache_key": "${{ inputs.cache_key || 'trust-boundary-cache-shared' }}",
+            "cache_primary_key": "${{ steps.cache_save.outputs.cache-primary-key }}",
+            "cache_matched_key": "${{ steps.cache_save.outputs.cache-matched-key }}"
+          }
+          EOF
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.artifact_name || 'trust-boundary-payload' }}-${{ inputs.scenario || 'artifact_push' }}
+          path: trust-artifact/*
+          retention-days: 7
