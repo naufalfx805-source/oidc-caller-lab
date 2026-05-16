@@ -35,7 +35,14 @@ jobs:
           mkdir -p workflow-run-consumer downloaded
           cat "$GITHUB_EVENT_PATH" > workflow-run-consumer/event.json
           python3 - <<'PY'
-          import hashlib, json, os, pathlib, urllib.request, zipfile
+          import hashlib, json, os, pathlib, urllib.parse, urllib.request, zipfile
+          class StripAuthRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, req, fp, code, msg, headers, newurl):
+                  new_req = super().redirect_request(req, fp, code, msg, headers, newurl)
+                  if new_req and urllib.parse.urlparse(newurl).netloc != urllib.parse.urlparse(req.full_url).netloc:
+                      new_req.remove_header("Authorization")
+                  return new_req
+          opener = urllib.request.build_opener(StripAuthRedirect)
           event = json.loads(pathlib.Path(os.environ["GITHUB_EVENT_PATH"]).read_text(encoding="utf-8"))
           wr = event["workflow_run"]
           token = os.environ["GH_TOKEN"]
@@ -79,7 +86,7 @@ jobs:
               "artifacts": [],
           }
           req = urllib.request.Request(wr["artifacts_url"], headers=headers)
-          with urllib.request.urlopen(req, timeout=30) as resp:
+          with opener.open(req, timeout=30) as resp:
               artifacts = json.loads(resp.read())
           pathlib.Path("workflow-run-consumer/artifacts-list.json").write_text(json.dumps(artifacts, indent=2, sort_keys=True), encoding="utf-8")
           for artifact in artifacts.get("artifacts", []):
@@ -91,7 +98,7 @@ jobs:
               }
               archive_req = urllib.request.Request(artifact["archive_download_url"], headers=headers)
               zip_path = pathlib.Path("downloaded") / f"{artifact['id']}.zip"
-              with urllib.request.urlopen(archive_req, timeout=30) as resp:
+              with opener.open(archive_req, timeout=30) as resp:
                   zip_path.write_bytes(resp.read())
               extract_dir = pathlib.Path("downloaded") / str(artifact["id"])
               extract_dir.mkdir(parents=True, exist_ok=True)
