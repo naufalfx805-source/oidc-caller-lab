@@ -27,7 +27,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Capture caller direct claims
         env:
-          SCENARIO: ${{ inputs.scenario || 'reusable_rerun_mutable' }}
+          SCENARIO: ${{ inputs.scenario || 'probe_new_workflow_sha_flag_only' }}
           AUDIENCE: ${{ inputs.audience || 'oidc-identity-lab' }}
         run: |
           set -euo pipefail
@@ -47,5 +47,5 @@ jobs:
       id-token: write
       contents: read
     with:
-      scenario: ${{ inputs.scenario || 'reusable_rerun_mutable' }}
+      scenario: ${{ inputs.scenario || 'probe_new_workflow_sha_flag_only' }}
       audience: ${{ inputs.audience || 'oidc-identity-lab' }}
