@@ -56,6 +56,7 @@ def main() -> int:
     selected["_github_workflow_ref_env"] = os.getenv("GITHUB_WORKFLOW_REF")
     selected["_github_run_id_env"] = os.getenv("GITHUB_RUN_ID")
     selected["_token_header"] = json.loads(b64url_decode(header_b64))
+    selected["_raw_payload"] = payload
 
     with open(args.out, "w", encoding="utf-8") as f:
         json.dump(selected, f, indent=2, sort_keys=True)
