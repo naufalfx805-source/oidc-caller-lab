@@ -84,7 +84,7 @@ jobs:
           }
           if run_id != "0":
               req = urllib.request.Request(f"https://api.github.com/repos/{repo}/actions/runs/{run_id}/artifacts", headers=headers)
-                  with opener.open(req, timeout=30) as resp:
+              with opener.open(req, timeout=30) as resp:
                   artifacts = json.loads(resp.read())
               pathlib.Path("trust-consumer/artifacts-list.json").write_text(json.dumps(artifacts, indent=2, sort_keys=True), encoding="utf-8")
               for artifact in artifacts.get("artifacts", []):
