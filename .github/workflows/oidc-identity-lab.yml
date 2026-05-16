@@ -1,0 +1,48 @@
+name: OIDC Identity Lab Caller
+
+on:
+  workflow_dispatch:
+    inputs:
+      scenario:
+        description: Scenario label, e.g. baseline_mutable
+        required: true
+        default: baseline_mutable
+      audience:
+        description: OIDC audience value
+        required: true
+        default: oidc-identity-lab
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  caller_direct:
+    name: caller direct OIDC capture
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Capture caller direct claims
+        env:
+          SCENARIO: ${{ inputs.scenario }}
+          AUDIENCE: ${{ inputs.audience }}
+        run: |
+          set -euo pipefail
+          mkdir -p oidc-claims
+          python3 .github/scripts/capture_oidc_claims.py \
+            --audience "$AUDIENCE" \
+            --out "oidc-claims/${SCENARIO}__caller_direct.json"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: oidc-claims-caller-direct-${{ inputs.scenario }}
+          path: oidc-claims/*.json
+
+  reusable:
+    name: reusable workflow OIDC capture
+    uses: naufalfx805-source/oidc-callee-lab/.github/workflows/reusable-oidc-callee.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      scenario: ${{ inputs.scenario }}
+      audience: ${{ inputs.audience }}
