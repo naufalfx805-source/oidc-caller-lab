@@ -1,0 +1,120 @@
+name: Trust Boundary Workflow Run Consumer
+
+on:
+  workflow_run:
+    workflows:
+      - Trust Boundary Producer
+    types:
+      - completed
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  consume_workflow_run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Restore shared cache during workflow_run
+        id: cache_restore
+        uses: actions/cache/restore@v4
+        with:
+          path: restored-cache
+          key: trust-boundary-cache-shared
+          restore-keys: |
+            trust-boundary-cache-
+
+      - name: Capture triggering workflow_run and artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CACHE_HIT: ${{ steps.cache_restore.outputs.cache-hit }}
+          CACHE_PRIMARY_KEY: ${{ steps.cache_restore.outputs.cache-primary-key }}
+          CACHE_MATCHED_KEY: ${{ steps.cache_restore.outputs.cache-matched-key }}
+        run: |
+          set -euo pipefail
+          mkdir -p workflow-run-consumer downloaded
+          cat "$GITHUB_EVENT_PATH" > workflow-run-consumer/event.json
+          python3 - <<'PY'
+          import hashlib, json, os, pathlib, urllib.request, zipfile
+          event = json.loads(pathlib.Path(os.environ["GITHUB_EVENT_PATH"]).read_text(encoding="utf-8"))
+          wr = event["workflow_run"]
+          token = os.environ["GH_TOKEN"]
+          repo = os.environ["GITHUB_REPOSITORY"]
+          headers = {
+              "Authorization": "Bearer " + token,
+              "Accept": "application/vnd.github+json",
+              "X-GitHub-Api-Version": "2022-11-28",
+          }
+          result = {
+              "consumer": {
+                  "repository": repo,
+                  "repository_id": os.environ["GITHUB_REPOSITORY_ID"],
+                  "actor": os.environ["GITHUB_ACTOR"],
+                  "actor_id": os.environ["GITHUB_ACTOR_ID"],
+                  "ref": os.environ["GITHUB_REF"],
+                  "sha": os.environ["GITHUB_SHA"],
+                  "workflow_ref": os.environ["GITHUB_WORKFLOW_REF"],
+                  "run_id": os.environ["GITHUB_RUN_ID"],
+                  "event_name": os.environ["GITHUB_EVENT_NAME"],
+              },
+              "triggering_workflow_run": {
+                  "id": wr.get("id"),
+                  "name": wr.get("name"),
+                  "event": wr.get("event"),
+                  "status": wr.get("status"),
+                  "conclusion": wr.get("conclusion"),
+                  "head_branch": wr.get("head_branch"),
+                  "head_sha": wr.get("head_sha"),
+                  "head_repository": wr.get("head_repository", {}).get("full_name"),
+                  "head_repository_id": wr.get("head_repository", {}).get("id"),
+                  "repository": wr.get("repository", {}).get("full_name"),
+                  "repository_id": wr.get("repository", {}).get("id"),
+                  "actor": wr.get("actor", {}).get("login"),
+              },
+              "cache": {
+                  "hit": os.environ["CACHE_HIT"],
+                  "primary_key": os.environ["CACHE_PRIMARY_KEY"],
+                  "matched_key": os.environ["CACHE_MATCHED_KEY"],
+              },
+              "artifacts": [],
+          }
+          req = urllib.request.Request(wr["artifacts_url"], headers=headers)
+          with urllib.request.urlopen(req, timeout=30) as resp:
+              artifacts = json.loads(resp.read())
+          pathlib.Path("workflow-run-consumer/artifacts-list.json").write_text(json.dumps(artifacts, indent=2, sort_keys=True), encoding="utf-8")
+          for artifact in artifacts.get("artifacts", []):
+              item = {
+                  "id": artifact.get("id"),
+                  "name": artifact.get("name"),
+                  "digest": artifact.get("digest"),
+                  "workflow_run": artifact.get("workflow_run"),
+              }
+              archive_req = urllib.request.Request(artifact["archive_download_url"], headers=headers)
+              zip_path = pathlib.Path("downloaded") / f"{artifact['id']}.zip"
+              with urllib.request.urlopen(archive_req, timeout=30) as resp:
+                  zip_path.write_bytes(resp.read())
+              extract_dir = pathlib.Path("downloaded") / str(artifact["id"])
+              extract_dir.mkdir(parents=True, exist_ok=True)
+              with zipfile.ZipFile(zip_path) as zf:
+                  zf.extractall(extract_dir)
+              manifest_path = extract_dir / "manifest.json"
+              payload_path = extract_dir / "payload.txt"
+              if manifest_path.exists() and payload_path.exists():
+                  manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+                  payload_hash = hashlib.sha256(payload_path.read_bytes()).hexdigest()
+                  item["manifest"] = manifest
+                  item["payload_sha256_actual"] = payload_hash
+                  item["payload_sha256_matches_manifest"] = payload_hash == manifest.get("payload_sha256")
+              result["artifacts"].append(item)
+          cache_payload = pathlib.Path("restored-cache/cache-payload.txt")
+          if cache_payload.exists():
+              result["cache"]["payload_sha256"] = hashlib.sha256(cache_payload.read_bytes()).hexdigest()
+              result["cache"]["payload_preview"] = cache_payload.read_text(encoding="utf-8")[:2000]
+          pathlib.Path("workflow-run-consumer/workflow-run-result.json").write_text(json.dumps(result, indent=2, sort_keys=True), encoding="utf-8")
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: workflow-run-consumer-result-${{ github.event.workflow_run.id }}
+          path: workflow-run-consumer/*
+          retention-days: 7
